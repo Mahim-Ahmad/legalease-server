@@ -296,4 +296,31 @@ async function run() {
     res.send(result);
   });
 
-  
+  // ---- Admin analytics ----
+  app.get("/admin/analytics", verifyJWT, requireRole("admin"), async (req, res) => {
+    const [totalUsers, totalLawyers, totalHires, revenueAgg] = await Promise.all([
+      usersCollection.countDocuments({ role: "user" }),
+      usersCollection.countDocuments({ role: "lawyer" }),
+      hiringsCollection.countDocuments({ status: "accepted" }),
+      transactionsCollection.aggregate([{ $group: { _id: null, total: { $sum: "$amount" } } }]).toArray(),
+    ]);
+    res.send({
+      totalUsers,
+      totalLawyers,
+      totalHires,
+      totalRevenue: revenueAgg[0]?.total || 0,
+    });
+  });
+
+  await client.db("admin").command({ ping: 1 });
+  console.log("✅ Connected to MongoDB successfully");
+}
+run().catch(console.dir);
+
+app.get("/", (req, res) => {
+  res.send("LegalEase server is running");
+});
+
+app.listen(port, () => {
+  console.log(`LegalEase server listening on port ${port}`);
+});
