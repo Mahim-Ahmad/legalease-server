@@ -90,4 +90,76 @@ async function run() {
     res.send(result);
   });
 
+  // ---- Lawyers (public listing/details, lawyer-owned CRUD) ----
+  app.get("/lawyers/featured", async (req, res) => {
+    const result = await lawyersCollection.find().sort({ createdAt: -1 }).limit(6).toArray();
+    res.send(result);
+  });
+
+  app.get("/lawyers/top", async (req, res) => {
+    const result = await lawyersCollection.find().sort({ hireCount: -1 }).limit(3).toArray();
+    res.send(result);
+  });
+
+  app.get("/lawyers", async (req, res) => {
+    const { search, specialization, minFee, maxFee, available, page = 1, limit = 9 } = req.query;
+    const query = {};
+    if (search) query.name = { $regex: search, $options: "i" };
+    if (specialization) query.specialization = specialization;
+    if (minFee || maxFee) {
+      query.hourlyFee = {};
+      if (minFee) query.hourlyFee.$gte = Number(minFee);
+      if (maxFee) query.hourlyFee.$lte = Number(maxFee);
+    }
+    if (available === "true") query.status = { $ne: "busy" };
+
+    const skip = (Number(page) - 1) * Number(limit);
+    const [items, total] = await Promise.all([
+      lawyersCollection.find(query).skip(skip).limit(Number(limit)).toArray(),
+      lawyersCollection.countDocuments(query),
+    ]);
+    res.send({ items, total, page: Number(page), pages: Math.ceil(total / Number(limit)) });
+  });
+
+  app.get("/lawyers/:id", async (req, res) => {
+    const result = await lawyersCollection.findOne({ _id: new ObjectId(req.params.id) });
+    res.send(result);
+  });
+
+  app.get("/my-lawyer-profile", verifyJWT, requireRole("lawyer"), async (req, res) => {
+    const result = await lawyersCollection.find({ ownerEmail: req.decoded.email }).toArray();
+    res.send(result);
+  });
+
+  app.post("/lawyers", verifyJWT, requireRole("lawyer"), async (req, res) => {
+    const lawyer = {
+      ...req.body,
+      hourlyFee: Number(req.body.hourlyFee),
+      ownerEmail: req.decoded.email,
+      hireCount: 0,
+      status: "available",
+      createdAt: new Date(),
+    };
+    const result = await lawyersCollection.insertOne(lawyer);
+    res.send(result);
+  });
+
+  app.patch("/lawyers/:id", verifyJWT, requireRole("lawyer"), async (req, res) => {
+    const lawyer = await lawyersCollection.findOne({ _id: new ObjectId(req.params.id) });
+    if (!lawyer) return res.status(404).send({ message: "Lawyer not found" });
+    if (lawyer.ownerEmail !== req.decoded.email) return res.status(403).send({ message: "Forbidden access" });
+    const updateDoc = { $set: { ...req.body } };
+    delete updateDoc.$set._id;
+    const result = await lawyersCollection.updateOne({ _id: new ObjectId(req.params.id) }, updateDoc);
+    res.send(result);
+  });
+
+  app.delete("/lawyers/:id", verifyJWT, requireRole("lawyer"), async (req, res) => {
+    const lawyer = await lawyersCollection.findOne({ _id: new ObjectId(req.params.id) });
+    if (!lawyer) return res.status(404).send({ message: "Lawyer not found" });
+    if (lawyer.ownerEmail !== req.decoded.email) return res.status(403).send({ message: "Forbidden access" });
+    const result = await lawyersCollection.deleteOne({ _id: new ObjectId(req.params.id) });
+    res.send(result);
+  });
+
   
