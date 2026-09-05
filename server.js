@@ -206,4 +206,53 @@ async function run() {
     res.send({ success: true });
   });
 
+  // Has the caller ever hired this lawyer (used to gate comments)
+  app.get("/hirings/check", verifyJWT, async (req, res) => {
+    const { lawyerId } = req.query;
+    const hiring = await hiringsCollection.findOne({ lawyerId, clientEmail: req.decoded.email });
+    res.send({ hasHired: !!hiring });
+  });
+
+  // ---- Stripe payment ----
+  app.post("/create-payment-intent", verifyJWT, async (req, res) => {
+    const { hiringId } = req.body;
+    const hiring = await hiringsCollection.findOne({ _id: new ObjectId(hiringId) });
+    if (!hiring) return res.status(404).send({ message: "Hiring request not found" });
+    if (hiring.clientEmail !== req.decoded.email) return res.status(403).send({ message: "Forbidden access" });
+    if (hiring.status !== "accepted") return res.status(400).send({ message: "This hiring request isn't accepted yet" });
+    if (hiring.paid) return res.status(400).send({ message: "This hiring has already been paid for" });
+
+    const amountCents = Math.round(hiring.hourlyFee * 100);
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: amountCents,
+      currency: "usd",
+      metadata: { hiringId },
+    });
+    res.send({ clientSecret: paymentIntent.client_secret });
+  });
+
+  app.post("/payments/confirm", verifyJWT, async (req, res) => {
+    const { hiringId, transactionId } = req.body;
+    const hiring = await hiringsCollection.findOne({ _id: new ObjectId(hiringId) });
+    if (!hiring || hiring.clientEmail !== req.decoded.email) {
+      return res.status(403).send({ message: "Forbidden access" });
+    }
+
+    await hiringsCollection.updateOne({ _id: new ObjectId(hiringId) }, { $set: { paid: true, transactionId } });
+    await transactionsCollection.insertOne({
+      transactionId,
+      hiringId,
+      email: req.decoded.email,
+      lawyerName: hiring.lawyerName,
+      amount: hiring.hourlyFee,
+      date: new Date(),
+    });
+    res.send({ success: true });
+  });
+
+  app.get("/transactions", verifyJWT, requireRole("admin"), async (req, res) => {
+    const result = await transactionsCollection.find().sort({ date: -1 }).toArray();
+    res.send(result);
+  });
+
   
