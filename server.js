@@ -45,4 +45,49 @@ async function run() {
     res.send({ token, role: user.role });
   });
 
+  // ---- Users ----
+  app.get("/users/role", verifyJWT, async (req, res) => {
+    let user = await usersCollection.findOne({ email: req.decoded.email });
+    if (!user) {
+      user = { email: req.decoded.email, name: req.decoded.name, role: "user", createdAt: new Date() };
+      await usersCollection.insertOne(user);
+    }
+    res.send({ role: user.role });
+  });
+
+  app.patch("/users/set-role", verifyJWT, async (req, res) => {
+    const { role } = req.body; // called once right after registration to pick user/lawyer
+    if (!["user", "lawyer"].includes(role)) return res.status(400).send({ message: "Invalid role" });
+    await usersCollection.updateOne({ email: req.decoded.email }, { $set: { role } });
+    res.send({ role });
+  });
+
+  app.patch("/users/profile", verifyJWT, async (req, res) => {
+    const { name, photo } = req.body;
+    const result = await usersCollection.updateOne(
+      { email: req.decoded.email },
+      { $set: { name, photo } }
+    );
+    res.send(result);
+  });
+
+  app.get("/users", verifyJWT, requireRole("admin"), async (req, res) => {
+    const result = await usersCollection.find().toArray();
+    res.send(result);
+  });
+
+  app.patch("/users/:id/role", verifyJWT, requireRole("admin"), async (req, res) => {
+    const { role } = req.body;
+    const result = await usersCollection.updateOne(
+      { _id: new ObjectId(req.params.id) },
+      { $set: { role } }
+    );
+    res.send(result);
+  });
+
+  app.delete("/users/:id", verifyJWT, requireRole("admin"), async (req, res) => {
+    const result = await usersCollection.deleteOne({ _id: new ObjectId(req.params.id) });
+    res.send(result);
+  });
+
   
