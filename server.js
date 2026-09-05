@@ -162,4 +162,48 @@ async function run() {
     res.send(result);
   });
 
+  // ---- Hirings ----
+  app.post("/hirings", verifyJWT, async (req, res) => {
+    const { lawyerId } = req.body;
+    const lawyer = await lawyersCollection.findOne({ _id: new ObjectId(lawyerId) });
+    if (!lawyer) return res.status(404).send({ message: "Lawyer not found" });
+
+    const hiring = {
+      lawyerId,
+      lawyerName: lawyer.name,
+      lawyerEmail: lawyer.ownerEmail,
+      hourlyFee: lawyer.hourlyFee,
+      clientEmail: req.decoded.email,
+      clientName: req.decoded.name,
+      status: "pending",
+      paid: false,
+      createdAt: new Date(),
+    };
+    const result = await hiringsCollection.insertOne(hiring);
+    res.send(result);
+  });
+
+  app.get("/my-hirings", verifyJWT, async (req, res) => {
+    const result = await hiringsCollection.find({ clientEmail: req.decoded.email }).sort({ createdAt: -1 }).toArray();
+    res.send(result);
+  });
+
+  app.get("/lawyer-hirings", verifyJWT, requireRole("lawyer"), async (req, res) => {
+    const result = await hiringsCollection.find({ lawyerEmail: req.decoded.email }).sort({ createdAt: -1 }).toArray();
+    res.send(result);
+  });
+
+  app.patch("/hirings/:id/status", verifyJWT, requireRole("lawyer"), async (req, res) => {
+    const { status } = req.body; // "accepted" | "rejected"
+    const hiring = await hiringsCollection.findOne({ _id: new ObjectId(req.params.id) });
+    if (!hiring) return res.status(404).send({ message: "Hiring request not found" });
+    if (hiring.lawyerEmail !== req.decoded.email) return res.status(403).send({ message: "Forbidden access" });
+
+    await hiringsCollection.updateOne({ _id: new ObjectId(req.params.id) }, { $set: { status } });
+    if (status === "accepted") {
+      await lawyersCollection.updateOne({ _id: new ObjectId(hiring.lawyerId) }, { $inc: { hireCount: 1 } });
+    }
+    res.send({ success: true });
+  });
+
   
