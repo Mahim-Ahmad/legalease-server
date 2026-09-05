@@ -255,4 +255,45 @@ async function run() {
     res.send(result);
   });
 
+  // ---- Comments (only for users who have hired the lawyer) ----
+  app.get("/comments/:lawyerId", async (req, res) => {
+    const result = await commentsCollection.find({ lawyerId: req.params.lawyerId }).sort({ createdAt: -1 }).toArray();
+    res.send(result);
+  });
+
+  app.post("/comments", verifyJWT, async (req, res) => {
+    const { lawyerId, text } = req.body;
+    const hiring = await hiringsCollection.findOne({ lawyerId, clientEmail: req.decoded.email });
+    if (!hiring) return res.status(403).send({ message: "Only clients who have hired this lawyer can comment" });
+
+    const comment = {
+      lawyerId,
+      text,
+      authorEmail: req.decoded.email,
+      authorName: req.decoded.name,
+      createdAt: new Date(),
+    };
+    const result = await commentsCollection.insertOne(comment);
+    res.send(result);
+  });
+
+  app.get("/my-comments", verifyJWT, async (req, res) => {
+    const result = await commentsCollection.find({ authorEmail: req.decoded.email }).sort({ createdAt: -1 }).toArray();
+    res.send(result);
+  });
+
+  app.patch("/comments/:id", verifyJWT, async (req, res) => {
+    const comment = await commentsCollection.findOne({ _id: new ObjectId(req.params.id) });
+    if (!comment || comment.authorEmail !== req.decoded.email) return res.status(403).send({ message: "Forbidden access" });
+    const result = await commentsCollection.updateOne({ _id: new ObjectId(req.params.id) }, { $set: { text: req.body.text } });
+    res.send(result);
+  });
+
+  app.delete("/comments/:id", verifyJWT, async (req, res) => {
+    const comment = await commentsCollection.findOne({ _id: new ObjectId(req.params.id) });
+    if (!comment || comment.authorEmail !== req.decoded.email) return res.status(403).send({ message: "Forbidden access" });
+    const result = await commentsCollection.deleteOne({ _id: new ObjectId(req.params.id) });
+    res.send(result);
+  });
+
   
