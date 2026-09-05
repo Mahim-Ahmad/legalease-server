@@ -9,4 +9,9 @@ Express + MongoDB + Stripe backend for the LegalEase online lawyer hiring platfo
 - Comment system gated to clients who have actually hired that lawyer
 - Admin routes for user management, transaction history, and platform analytics
 
-
+## Setup
+```bash
+npm install
+cp .env.example .env   # fill in MONGODB_URI, JWT_SECRET, CLIENT_URL, STRIPE_SECRET_KEY
+npm run dev
+```
